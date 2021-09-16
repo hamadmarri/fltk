@@ -34,10 +34,10 @@ struct thread_data {
 class MyWindow : public Fl_Double_Window {
 private:
 	unsigned char pixbuf[YSIZE][XSIZE][3];
-	double zoomX;
-	double zoomY;
-	double origX;
-	double origY;
+	long double zoomX;
+	long double zoomY;
+	long double origX;
+	long double origY;
 
 	// FLTK DRAW METHOD
 	void draw() {
@@ -60,12 +60,12 @@ public:
 
 	int handle(int e) {
 		if (e == FL_RELEASE) {
-			// double newX = convertXAxis(Fl::event_x());
-			double newX = Fl::event_x() - ((double) XSIZE / 2.0);
-			double newY = Fl::event_y() - ((double) YSIZE / 2.0);
+			// long double newX = convertXAxis(Fl::event_x());
+			long double newX = Fl::event_x() - ((long double) XSIZE / 2.0);
+			long double newY = Fl::event_y() - ((long double) YSIZE / 2.0);
 			
-			newX = zoomX * newX / (double) XSIZE;
-			newY = zoomY * newY / (double) YSIZE;
+			newX = zoomX * newX / (long double) XSIZE;
+			newY = zoomY * newY / (long double) YSIZE;
 			
 			// printf("x: %d, y: %d\n", Fl::event_x(), Fl::event_y());			
 			// printf("new x: %f, new y: %f\n", newX, newY);
@@ -92,25 +92,25 @@ public:
 		pixbuf[y][x][B] = b;
 	}
 
-	double convertXAxis(unsigned int x) {
-		double ecX = x;
-		ecX = ecX - ((double) XSIZE / 2.0);
-		ecX = zoomX * ecX / (double) XSIZE;
+	long double convertXAxis(unsigned int x) {
+		long double ecX = x;
+		ecX = ecX - ((long double) XSIZE / 2.0);
+		ecX = zoomX * ecX / (long double) XSIZE;
 		ecX += origX;
 		return ecX;
 	}
 
-	double convertYAxis(unsigned int y) {
-		double ecY = y;
-		ecY = ecY - ((double) YSIZE / 2.0);
-		ecY = zoomY * ecY / (double) YSIZE;
+	long double convertYAxis(unsigned int y) {
+		long double ecY = y;
+		ecY = ecY - ((long double) YSIZE / 2.0);
+		ecY = zoomY * ecY / (long double) YSIZE;
 		ecY += origY;
 		return ecY;
 	}
 
-	unsigned int mandelbrot(unsigned int x, unsigned int y, double &zR, double &zI) {		
+	unsigned int mandelbrot(unsigned int x, unsigned int y, long double &zR, long double &zI) {		
 		unsigned int iter = 0;
-		double cR, cI, old_zR;
+		long double cR, cI, old_zR;
 		
 		zR = zI = 0.0;
 		cR = convertXAxis(x);
@@ -133,11 +133,11 @@ public:
 	}
 	
 	void colorize(unsigned char &r, unsigned char &g, unsigned char &b
-			, double zR, double zI)
+			, long double zR, long double zI)
 	{
 		// printf("zR: %f, zI: %f\n", zR, zI);
 		unsigned int scale = 100000;
-		double max = 4.0 * scale;
+		long double max = 4.0 * scale;
 
 		zR = abs(zR * scale);
 		zI = abs(zI * scale);
@@ -152,7 +152,7 @@ public:
 	void _RenderImage(unsigned int from, unsigned int to) {
 		unsigned char r, g, b;
 		unsigned int iter;
-		double zR, zI;
+		long double zR, zI;
 		int scale_iter = 2;
 
 		for (unsigned int y = from; y < to; y++) {
