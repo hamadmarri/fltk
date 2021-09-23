@@ -1,18 +1,24 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_Color_Chooser.H>
+#include <FL/Fl_Progress.H>
 #include <stdio.h>
 #include <cmath>
+#include <chrono>
 #include <pthread.h>
+#include <complex>
 
 #define R 0
 #define G 1
 #define B 2
 
-#define MAX_ITER 250 //100
+#define THREADS 4
 
-#define YSIZE 1200
-#define PROPOTION 1.666666667
+#define MAX_ITER 1000 // 1000 254
+
+#define YSIZE 1440
+#define PROPOTION 1.77777777 //1.666666667
 #define XSIZE (int) (YSIZE * PROPOTION)
 
 #define SCALE_X 4.0
@@ -21,11 +27,14 @@
 #define RIGHT_SHIFT 0
 #define TOP_SHIFT 0
 
+#define d_complex std::complex<long double>
+
 // #define UPDATE_RATE 0.016 // 62fps
 
 class MyWindow;
 
 struct thread_data {
+	int id;
 	unsigned int from;
 	unsigned int to;
 	MyWindow *instance;
@@ -39,6 +48,8 @@ private:
 	long double origX;
 	long double origY;
 
+	unsigned int progress = 0;
+
 	// FLTK DRAW METHOD
 	void draw() {
 		fl_draw_image((const uchar*) &pixbuf, 0, 0, XSIZE, YSIZE, 3, XSIZE * 3);
@@ -49,12 +60,12 @@ public:
 		: Fl_Double_Window(w , h, name)
 	{
 		end();
-		
+
 		zoomX = SCALE_X;
 		zoomY = SCALE_Y;
 		origX = RIGHT_SHIFT;
 		origY = TOP_SHIFT;
-	
+
 		RenderImage();
 	}
 
@@ -63,20 +74,22 @@ public:
 			// long double newX = convertXAxis(Fl::event_x());
 			long double newX = Fl::event_x() - ((long double) XSIZE / 2.0);
 			long double newY = Fl::event_y() - ((long double) YSIZE / 2.0);
-			
+
 			newX = zoomX * newX / (long double) XSIZE;
 			newY = zoomY * newY / (long double) YSIZE;
-			
-			// printf("x: %d, y: %d\n", Fl::event_x(), Fl::event_y());			
+
+			// printf("x: %d, y: %d\n", Fl::event_x(), Fl::event_y());
 			// printf("new x: %f, new y: %f\n", newX, newY);
 
 			origX += newX;
 			origY += newY;
 			// printf("new origX: %f\n", this->origX);
 
-			zoomX -= zoomX / (SCALE_X - 2.0);
-			zoomY = zoomX / PROPOTION;
-			
+			for (int i = 0; i < 2; ++i) {
+				zoomX -= zoomX / (SCALE_X - 2.0);
+				zoomY = zoomX / PROPOTION;
+			}
+
 			// printf("zoom: %lf\n", this->zoomX);
 
 			RenderImage();
@@ -108,93 +121,129 @@ public:
 		return ecY;
 	}
 
-	unsigned int mandelbrot(unsigned int x, unsigned int y, long double &zR, long double &zI) {		
+	unsigned int mandelbrot(unsigned int x, unsigned int y, d_complex &z) {
 		unsigned int iter = 0;
-		long double cR, cI, old_zR;
-		
-		zR = zI = 0.0;
-		cR = convertXAxis(x);
-		cI = convertYAxis(y);
-		
+		d_complex c;
+
 		// printf("cR: %f, cI: %f ", cR, cI);
 
-		do {
-			old_zR = zR;
-			// zR = (zR * zR) - (zI * zI) + cR;
-			// zI = (2.0 * old_zR * zI) + cI;
+		z = d_complex(0.0, 0.0);
+		c = d_complex(convertXAxis(x), convertYAxis(y));
 
-			zR = (zR * zR) - (zI * zI) + cR;
-			zI = (2.0 * old_zR * zI) + cI;
-			
+		do {
+			// mandelbrot
+			//z = pow(z, 2) + c;
+
+			// heart
+			//z = (z + d_complex(sin(real(z)), cos(real(z)))) * z + c;
+
+			// z = (c + z) - pow(z, 3) + c;
+
+			// heaven
+			//z = (c + z) - (z + pow(d_complex(sin(real(z)), cos(imag(z))), 3)) + c;
+
+			// if (iter % 2 == 0)
+			// z = pow(z, 2) + pow(c, 2);
+			// else
+			// 	z = pow(z, 5) - pow(c, 2);
+
+
+			z = pow(z, 2) + c;
+			z = sin(z);
+
 			iter++;
-		} while ((zR * zR) + (zI * zI) < 4.0 && iter < MAX_ITER);
+		} while (abs(z) < 2.0 && iter < MAX_ITER);
 
 		return iter;
 	}
-	
+
 	void colorize(unsigned char &r, unsigned char &g, unsigned char &b
-			, long double zR, long double zI)
+			, d_complex &z, int iter)
 	{
-		// printf("zR: %f, zI: %f\n", zR, zI);
-		unsigned int scale = 100000;
-		long double max = 4.0 * scale;
+		double hue, sat, val, _r, _g, _b;
+		double n;
 
-		zR = abs(zR * scale);
-		zI = abs(zI * scale);
+		r = g = b = 0;
 
-		r = 184 * log(zR) / log(scale * 2);
-		g = 184 * log(zI) / log(scale * 2);
-		b = 204 * log(sqrt(zR * zR + zI * zI)) / log(sqrt(scale * scale + scale * scale));
-		// printf("r: %d, g: %d, b: %d\n", r, g, b);
+		n = ((double) iter) + 1.0 - (log(log(abs(z))) / log(2));
+		// n = (n * 5.9999999); // / 360.0;
+		// printf("%Lf\n", n);
+
+		r = (n * 0.5) > 254? 254: (n * 0.5);
+		g = (n * 0.2) > 254? 254: (n * 0.2);
+		b = n > 254? 254: n;
+
+		n = n / log(MAX_ITER);
+		if (n >= 6)
+			n = 5.999999999;
+
+		hue = n;
+		sat = 1.0;
+		val = 1.0 - (b + (3 * 254)) / (4.0 * 254.0);
+
+		Fl_Color_Chooser::hsv2rgb(hue, sat, val, _r, _g, _b);
+		r = (r + (_r * 254.0)) / 2;
+		g = (g + (_g * 254.0) / 2);
+		b = (b + (_b * 254.0) / 2);
+	}
+
+	void print_progress(int id, unsigned int progress) {
+		// Fl::lock();
+		this->progress += progress;
+
+		if (this->progress % 100 == 0) {
+			printf("%d%%\n", (this->progress * 100) / YSIZE);
+			// this->label(std::to_string((this->progress * 100) / YSIZE).c_str());
+
+			this->progress++;
+		}
+
+		// Fl::unlock();
+		// Fl::awake();
 	}
 
 	// MAKE A NEW PICTURE IN THE PIXEL BUFFER, SCHEDULE FLTK TO DRAW IT
-	void _RenderImage(unsigned int from, unsigned int to) {
+	void _RenderImage(int id, unsigned int from, unsigned int to) {
 		unsigned char r, g, b;
-		unsigned int iter;
-		long double zR, zI;
-		int scale_iter = 2;
+		unsigned int iter, last_report = 0;
+		d_complex z;
 
 		for (unsigned int y = from; y < to; y++) {
 			for (unsigned int x = 0; x < XSIZE; x++) {
-				iter = MyWindow::mandelbrot(x, y, zR, zI);
-				
+				iter = mandelbrot(x, y, z);
+
 				if (iter != MAX_ITER) {
-					r = g = b = 0;
-					iter *= scale_iter;
-					b = (254 * log(iter) / log(MAX_ITER * scale_iter));
-					r = (50 * log(iter * abs(zR)) / log(MAX_ITER * scale_iter));
-					g = (50 * log(iter * abs(zI)) / log(MAX_ITER * scale_iter));
-					// printf("log(%d): %f, b: %d\n", iter, log(iter), b);
-					
+					colorize(r, g, b, z, iter);
 				} else {
-					colorize(r, g, b, zR, zI);
-					// r = g = 0;
-					// b = 254;
+					r = g = b = 254;
 				}
 
 				PlotPixel(x, y, r, g, b);
 			}
+
+			print_progress(id, y - from - last_report);
+			last_report = y - from;
 		}
 	}
 
 	static void *thread_wraper(void *context) {
 		thread_data *td = (thread_data*) context;
 
-		td->instance->_RenderImage(td->from, td->to);
+		td->instance->_RenderImage(td->id, td->from, td->to);
 		return 0;
 	}
 
 	void RenderImage() {
-		// Fl::lock();
-		const int number_of_threads = 4;
-		pthread_t threads[number_of_threads];
-		struct thread_data td[number_of_threads];
+		pthread_t threads[THREADS];
+		struct thread_data td[THREADS];
 		unsigned int from = 0;
-		const unsigned int step = YSIZE / number_of_threads;
+		const unsigned int step = YSIZE / THREADS;
 		unsigned int to = step;
 
-		for (int i = 0; i < number_of_threads; ++i) {
+		auto started = std::chrono::high_resolution_clock::now();
+
+		for (int i = 0; i < THREADS; ++i) {
+			td[i].id = i;
 			td[i].from = from;
 			td[i].to = to;
 			td[i].instance = this;
@@ -205,14 +254,22 @@ public:
 			to += step;
 		}
 
-		for (int i = 0; i < number_of_threads; ++i)
+		for (int i = 0; i < THREADS; ++i)
 			pthread_join(threads[i], NULL);
 
+		auto done = std::chrono::high_resolution_clock::now();
+		printf("took: %ldms\n",
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				done - started
+			).count());
+
 		redraw();
+		this->progress = 0;
 	}
 };
 
 int main(int argc, char**argv) {
+
 	Fl::visual(FL_RGB); // prevents dithering on some systems
 	MyWindow *win = new MyWindow(XSIZE, YSIZE);
 	win->show();
