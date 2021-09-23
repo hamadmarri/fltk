@@ -13,7 +13,7 @@
 #define G 1
 #define B 2
 
-#define THREADS 4
+#define THREADS 8
 
 #define MAX_ITER 1000 // 1000 254
 
@@ -149,7 +149,7 @@ public:
 
 
 			z = pow(z, 2) + c;
-			z = sin(z);
+			//z = sin(z);
 
 			iter++;
 		} while (abs(z) < 2.0 && iter < MAX_ITER);
@@ -187,43 +187,41 @@ public:
 		b = (b + (_b * 254.0) / 2);
 	}
 
-	void print_progress(int id, unsigned int progress) {
-		// Fl::lock();
-		this->progress += progress;
+	void print_progress() {
+		this->progress++;
 
 		if (this->progress % 100 == 0) {
 			printf("%d%%\n", (this->progress * 100) / YSIZE);
-			// this->label(std::to_string((this->progress * 100) / YSIZE).c_str());
-
 			this->progress++;
 		}
-
-		// Fl::unlock();
-		// Fl::awake();
 	}
 
 	// MAKE A NEW PICTURE IN THE PIXEL BUFFER, SCHEDULE FLTK TO DRAW IT
 	void _RenderImage(int id, unsigned int from, unsigned int to) {
 		unsigned char r, g, b;
-		unsigned int iter, last_report = 0;
+		unsigned int iter;
 		d_complex z;
+		unsigned int y, x, yx;
 
-		for (unsigned int y = from; y < to; y++) {
-			for (unsigned int x = 0; x < XSIZE; x++) {
-				iter = mandelbrot(x, y, z);
+		for (yx = from; yx < to; yx++) {
+			y = yx / XSIZE;
+			x = yx % XSIZE;
+			
+			iter = mandelbrot(x, y, z);
 
-				if (iter != MAX_ITER) {
-					colorize(r, g, b, z, iter);
-				} else {
-					r = g = b = 254;
-				}
-
-				PlotPixel(x, y, r, g, b);
+			if (iter != MAX_ITER) {
+				colorize(r, g, b, z, iter);
+			} else {
+				r = g = b = 254;
 			}
 
-			print_progress(id, y - from - last_report);
-			last_report = y - from;
+			PlotPixel(x, y, r, g, b);
+
+			if (x + 1 == XSIZE)
+				print_progress();
 		}
+		
+		//printf("%d done\n", id);
 	}
 
 	static void *thread_wraper(void *context) {
@@ -237,7 +235,7 @@ public:
 		pthread_t threads[THREADS];
 		struct thread_data td[THREADS];
 		unsigned int from = 0;
-		const unsigned int step = YSIZE / THREADS;
+		const unsigned int step = (YSIZE * XSIZE) / THREADS;
 		unsigned int to = step;
 
 		auto started = std::chrono::high_resolution_clock::now();
