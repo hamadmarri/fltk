@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <cmath>
 #include <chrono>
-#include <pthread.h>
 #include <complex>
+#include <omp.h>
 
 #define R 0
 #define G 1
@@ -15,7 +15,7 @@
 
 #define THREADS 4
 
-#define MAX_ITER 1000 // 1000 254
+#define MAX_ITER 60 // 1000 254 50
 
 #define YSIZE 1440
 #define PROPOTION 1.77777777 //1.666666667
@@ -30,25 +30,16 @@
 #define d_complex std::complex<long double>
 
 // #define UPDATE_RATE 0.016 // 62fps
-
-class MyWindow;
-
-struct thread_data {
-	int id;
-	unsigned int from;
-	unsigned int to;
-	MyWindow *instance;
-};
+unsigned char pixbuf[YSIZE][XSIZE][3];
 
 class MyWindow : public Fl_Double_Window {
 private:
-	unsigned char pixbuf[YSIZE][XSIZE][3];
-	long double zoomX;
-	long double zoomY;
-	long double origX;
-	long double origY;
+	static long double zoomX;
+	static long double zoomY;
+	static long double origX;
+	static long double origY;
 
-	unsigned int progress = 0;
+	static unsigned int progress;
 
 	// FLTK DRAW METHOD
 	void draw() {
@@ -60,12 +51,6 @@ public:
 		: Fl_Double_Window(w , h, name)
 	{
 		end();
-
-		zoomX = SCALE_X;
-		zoomY = SCALE_Y;
-		origX = RIGHT_SHIFT;
-		origY = TOP_SHIFT;
-
 		RenderImage();
 	}
 
@@ -99,13 +84,13 @@ public:
 	}
 
 	// PLOT A PIXEL AS AN RGB COLOR INTO THE PIXEL BUFFER
-	void PlotPixel(int x, int y, unsigned char r, unsigned char g, unsigned char b) {
+	static void PlotPixel(int x, int y, unsigned char r, unsigned char g, unsigned char b) {
 		pixbuf[y][x][R] = r;
 		pixbuf[y][x][G] = g;
 		pixbuf[y][x][B] = b;
 	}
 
-	long double convertXAxis(unsigned int x) {
+	static long double convertXAxis(unsigned int x) {
 		long double ecX = x;
 		ecX = ecX - ((long double) XSIZE / 2.0);
 		ecX = zoomX * ecX / (long double) XSIZE;
@@ -113,7 +98,7 @@ public:
 		return ecX;
 	}
 
-	long double convertYAxis(unsigned int y) {
+	static long double convertYAxis(unsigned int y) {
 		long double ecY = y;
 		ecY = ecY - ((long double) YSIZE / 2.0);
 		ecY = zoomY * ecY / (long double) YSIZE;
@@ -121,7 +106,7 @@ public:
 		return ecY;
 	}
 
-	unsigned int mandelbrot(unsigned int x, unsigned int y, d_complex &z) {
+	static unsigned int mandelbrot(unsigned int x, unsigned int y, d_complex &z) {
 		unsigned int iter = 0;
 		d_complex c;
 
@@ -157,7 +142,7 @@ public:
 		return iter;
 	}
 
-	void colorize(unsigned char &r, unsigned char &g, unsigned char &b
+	static void colorize(unsigned char &r, unsigned char &g, unsigned char &b
 			, d_complex &z, int iter)
 	{
 		double hue, sat, val, _r, _g, _b;
@@ -187,29 +172,26 @@ public:
 		b = (b + (_b * 254.0) / 2);
 	}
 
-	void print_progress(int id, unsigned int progress) {
-		// Fl::lock();
-		this->progress += progress;
+	static void print_progress() {
+		progress ++;
 
-		if (this->progress % 100 == 0) {
-			printf("%d%%\n", (this->progress * 100) / YSIZE);
-			// this->label(std::to_string((this->progress * 100) / YSIZE).c_str());
-
-			this->progress++;
-		}
-
-		// Fl::unlock();
-		// Fl::awake();
+		if (progress % 100 == 0)
+			printf("%d%%\n", (progress * 100) / YSIZE);
 	}
 
 	// MAKE A NEW PICTURE IN THE PIXEL BUFFER, SCHEDULE FLTK TO DRAW IT
-	void _RenderImage(int id, unsigned int from, unsigned int to) {
+	static void _RenderImage() {
 		unsigned char r, g, b;
-		unsigned int iter, last_report = 0;
+		unsigned int iter;
 		d_complex z;
+		unsigned int y, x, yx;
 
-		for (unsigned int y = from; y < to; y++) {
-			for (unsigned int x = 0; x < XSIZE; x++) {
+		#pragma omp parallel for private(y, x, r, g, b, iter, z) num_threads(THREADS)
+		for (yx = 0; yx < YSIZE * XSIZE; yx++) {
+			y = yx / XSIZE;
+			x = yx % XSIZE;
+			
+			//for (x = 0; x < XSIZE; x++) {
 				iter = mandelbrot(x, y, z);
 
 				if (iter != MAX_ITER) {
@@ -219,43 +201,17 @@ public:
 				}
 
 				PlotPixel(x, y, r, g, b);
-			}
-
-			print_progress(id, y - from - last_report);
-			last_report = y - from;
+				
+				if (x + 1 == XSIZE)
+					print_progress();
+			//}
 		}
-	}
-
-	static void *thread_wraper(void *context) {
-		thread_data *td = (thread_data*) context;
-
-		td->instance->_RenderImage(td->id, td->from, td->to);
-		return 0;
 	}
 
 	void RenderImage() {
-		pthread_t threads[THREADS];
-		struct thread_data td[THREADS];
-		unsigned int from = 0;
-		const unsigned int step = YSIZE / THREADS;
-		unsigned int to = step;
-
 		auto started = std::chrono::high_resolution_clock::now();
 
-		for (int i = 0; i < THREADS; ++i) {
-			td[i].id = i;
-			td[i].from = from;
-			td[i].to = to;
-			td[i].instance = this;
-			pthread_create(&threads[i], NULL, &MyWindow::thread_wraper, (void*) &td[i]);
-
-			// printf("%d, %d\n", from, to);
-			from = to;
-			to += step;
-		}
-
-		for (int i = 0; i < THREADS; ++i)
-			pthread_join(threads[i], NULL);
+		_RenderImage();
 
 		auto done = std::chrono::high_resolution_clock::now();
 		printf("took: %ldms\n",
@@ -264,10 +220,16 @@ public:
 			).count());
 
 		redraw();
-		this->progress = 0;
+		progress = 0;
 	}
 };
 
+long double MyWindow::zoomX = SCALE_X;
+long double MyWindow::zoomY = SCALE_Y;
+long double MyWindow::origX = RIGHT_SHIFT;
+long double MyWindow::origY = TOP_SHIFT;
+unsigned int MyWindow::progress = 0;
+		
 int main(int argc, char**argv) {
 
 	Fl::visual(FL_RGB); // prevents dithering on some systems
